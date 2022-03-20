@@ -9,15 +9,12 @@ import (
 
 func Serve(addr string) error {
 	var mutex sync.Mutex
-	db := storage.DB{
+	db := &storage.DB{
 		Urls:  make(map[storage.URL]storage.URL),
 		Mutex: &mutex,
 	}
 
-	handler := handlers.MainHandler{
-		Repository: &db,
-		Location:   "http://" + addr + "/",
-	}
+	handler := handlers.NewMainHandler(db, "http://"+addr+"/")
 
 	server := &http.Server{
 		Addr:    addr,

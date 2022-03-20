@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"go-url-shortener/internal/app/storage"
 	"io"
 	"log"
@@ -9,13 +11,39 @@ import (
 )
 
 type MainHandler struct {
-	Repository storage.Repository
-	Location   string
+	*chi.Mux
+	storage.Repository
+	Location string
 }
 
-func (h MainHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
+func NewMainHandler(repository storage.Repository, location string) *MainHandler {
 
+	r := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Post("/", r.PostLongGetShort())
+	r.Get("/{short}", r.GetLong())
+
+	return r
+}
+
+func (h *MainHandler) GetLong() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		//short := r.URL.Path[1:]
+		short := chi.URLParam(r, "short")
+		long, err := h.Repository.GetLongURL(storage.URL(short))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, string(long), http.StatusTemporaryRedirect)
+	}
+}
+
+func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		long, err := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err != nil {
@@ -37,13 +65,5 @@ func (h MainHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Println("write answer error", err)
 			return
 		}
-	} else if r.Method == http.MethodGet {
-		short := r.URL.Path[1:]
-		long, err := h.Repository.GetLongURL(storage.URL(short))
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, string(long), http.StatusTemporaryRedirect)
 	}
 }

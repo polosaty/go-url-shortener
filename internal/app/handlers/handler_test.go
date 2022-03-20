@@ -5,12 +5,33 @@ import (
 	"github.com/stretchr/testify/require"
 	"go-url-shortener/internal/app/storage"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 )
+
+func testRequest(t *testing.T, ts *httptest.Server, method, path string, body io.Reader) (*http.Response, string) {
+	req, err := http.NewRequest(method, ts.URL+path, body)
+	require.NoError(t, err)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+			//return RedirectAttemptedError
+		},
+	}
+	//resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
+
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	return resp, string(respBody)
+}
 
 func TestMainHandler_ServeHTTP(t *testing.T) {
 
@@ -66,6 +87,15 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
+			if tt.db == nil {
+				var mutex sync.Mutex
+				tt.db = &storage.DB{Urls: make(map[storage.URL]storage.URL), Mutex: &mutex}
+			}
+
+			r := NewMainHandler(tt.db, "http://localhost:8080/")
+			ts := httptest.NewServer(r)
+			defer ts.Close()
+
 			var body io.Reader = nil
 			if tt.requestBody != "" {
 				body = strings.NewReader(tt.requestBody)
@@ -73,35 +103,18 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 			if tt.target == "" {
 				tt.target = "/"
 			}
-			request := httptest.NewRequest(tt.method, tt.target, body)
 
-			// создаём новый Recorder
-			w := httptest.NewRecorder()
-			// определяем хендлер
-			if tt.db == nil {
-				var mutex sync.Mutex
-				tt.db = &storage.DB{Urls: make(map[storage.URL]storage.URL), Mutex: &mutex}
-			}
-
-			h := MainHandler{
-				Repository: tt.db,
-				Location:   "http://localhost:8080/",
-			}
-			// запускаем сервер
-			h.ServeHTTP(w, request)
-			res := w.Result()
-
+			resp, respBody := testRequest(t, ts, tt.method, tt.target, body)
+			resp.Body.Close() // statictest: internal/app/handlers/handler_test.go:111:33: response body must be closed
 			// проверяем код ответа
-			assert.Equal(t, tt.want.statusCode, res.StatusCode)
+			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
 			// проверяем код заголовок
-			assert.Equal(t, tt.want.contentType, res.Header.Get("Content-Type"))
+			assert.Equal(t, tt.want.contentType, resp.Header.Get("Content-Type"))
 
 			// получаем и проверяем тело запроса
-			defer res.Body.Close()
-			resBody, err := io.ReadAll(res.Body)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want.body, string(resBody),
-				"Expected body [%s], got [%s]", tt.want.body, w.Body.String())
+			assert.Equal(t, tt.want.body, respBody,
+				"Expected body [%s], got [%s]", tt.want.body, respBody)
+
 		})
 	}
 }
