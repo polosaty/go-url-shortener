@@ -7,14 +7,17 @@ import (
 	"sync"
 )
 
-func Serve(addr string) error {
+func Serve(addr string, baseURL string) error {
 	var mutex sync.Mutex
 	db := &storage.DB{
 		Urls:  make(map[storage.URL]storage.URL),
 		Mutex: &mutex,
 	}
-
-	handler := handlers.NewMainHandler(db, "http://"+addr+"/")
+	//проверяем не забыт ли "/" в конце BASE_URL
+	if baseURL[len(baseURL)-1:] != "/" {
+		baseURL = baseURL + "/"
+	}
+	handler := handlers.NewMainHandler(db, baseURL)
 
 	server := &http.Server{
 		Addr:    addr,
