@@ -4,15 +4,9 @@ import (
 	"go-url-shortener/internal/app/handlers"
 	"go-url-shortener/internal/app/storage"
 	"net/http"
-	"sync"
 )
 
-func Serve(addr string, baseURL string) error {
-	var mutex sync.Mutex
-	db := &storage.DB{
-		Urls:  make(map[storage.URL]storage.URL),
-		Mutex: &mutex,
-	}
+func Serve(addr string, baseURL string, db storage.Repository) error {
 	//проверяем не забыт ли "/" в конце BASE_URL
 	if baseURL[len(baseURL)-1:] != "/" {
 		baseURL = baseURL + "/"

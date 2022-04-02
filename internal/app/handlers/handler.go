@@ -40,7 +40,7 @@ func (h *MainHandler) GetLong() http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		http.Redirect(w, r, string(long), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, long.S(), http.StatusTemporaryRedirect)
 	}
 }
 
@@ -53,15 +53,15 @@ func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 			log.Println("string read error", err)
 			return
 		}
-		longStr := string(long)
-		shortURL, err := h.Repository.SaveLongURL(storage.URL(longStr))
+		longStr := storage.URL(long)
+		shortURL, err := h.Repository.SaveLongURL(longStr)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			log.Println("cant make short url", err)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
-		_, err = fmt.Fprint(w, h.Location+string(shortURL))
+		_, err = fmt.Fprint(w, h.Location+shortURL.S())
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			log.Println("write answer error", err)
