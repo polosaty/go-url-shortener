@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"github.com/caarlos0/env/v6"
 	"go-url-shortener/internal/app/config"
 	"go-url-shortener/internal/app/server"
@@ -14,6 +15,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	flag.StringVar(&cfg.ServerAddress, "a", cfg.ServerAddress, "server address")
+	flag.StringVar(&cfg.BaseURL, "b", cfg.BaseURL, "base url for short urls")
+	flag.StringVar(&cfg.FileStoragePath, "f", cfg.FileStoragePath, "file for save/load urls")
+	flag.Parse()
 
 	var db storage.Repository
 
