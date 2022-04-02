@@ -20,6 +20,8 @@ type MainHandler struct {
 func NewMainHandler(repository storage.Repository, location string) *MainHandler {
 
 	r := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
+	r.Use(gzipInput)
+	r.Use(gzipOutput)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
