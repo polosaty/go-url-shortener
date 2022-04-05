@@ -8,7 +8,7 @@ import (
 )
 
 type FileStorage struct {
-	FileAccessMutex *sync.Mutex
+	FileAccessMutex *sync.RWMutex
 	memMap          *MemoryMap
 	encoder         *json.Encoder
 }
@@ -21,7 +21,7 @@ type Record struct {
 func NewFileStorage(filename string) (*FileStorage, error) {
 	db := &FileStorage{
 		memMap:          NewMemoryMap(),
-		FileAccessMutex: &sync.Mutex{},
+		FileAccessMutex: &sync.RWMutex{},
 		//encoder: json.NewEncoder(file),
 	}
 
@@ -81,7 +81,7 @@ func (d *FileStorage) SaveLongURL(long URL) (URL, error) {
 }
 
 func (d *FileStorage) GetLongURL(short URL) (URL, error) {
-	d.FileAccessMutex.Lock()
-	defer d.FileAccessMutex.Unlock()
+	d.FileAccessMutex.RLock()
+	defer d.FileAccessMutex.RUnlock()
 	return d.memMap.GetLongURL(short)
 }

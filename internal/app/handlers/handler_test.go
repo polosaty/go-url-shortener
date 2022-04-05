@@ -65,7 +65,7 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 			target: "/c101c693",
 			db: &storage.MemoryMap{Urls: map[storage.URL]storage.URL{
 				"c101c693": "https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string",
-			}, Mutex: &sync.Mutex{}},
+			}, Mutex: &sync.RWMutex{}},
 			want: want{
 				contentType: "text/html; charset=utf-8",
 				statusCode:  307,
@@ -99,8 +99,7 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			if tt.db == nil {
-				var mutex sync.Mutex
-				tt.db = &storage.MemoryMap{Urls: make(map[storage.URL]storage.URL), Mutex: &mutex}
+				tt.db = &storage.MemoryMap{Urls: make(map[storage.URL]storage.URL), Mutex: &sync.RWMutex{}}
 			}
 
 			r := NewMainHandler(tt.db, "http://localhost:8080/")

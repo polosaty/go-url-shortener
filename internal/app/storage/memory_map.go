@@ -7,14 +7,14 @@ import (
 )
 
 type MemoryMap struct {
-	Mutex *sync.Mutex
+	Mutex *sync.RWMutex
 	Urls  map[URL]URL
 }
 
 func NewMemoryMap() *MemoryMap {
 	db := &MemoryMap{
 		Urls:  make(map[URL]URL),
-		Mutex: &sync.Mutex{},
+		Mutex: &sync.RWMutex{},
 	}
 	return db
 }
@@ -33,8 +33,8 @@ func (d *MemoryMap) SaveLongURL(long URL) (URL, error) {
 }
 
 func (d *MemoryMap) GetLongURL(short URL) (URL, error) {
-	d.Mutex.Lock()
-	defer d.Mutex.Unlock()
+	d.Mutex.RLock()
+	defer d.Mutex.RUnlock()
 
 	longURL := d.Urls[short]
 	if longURL == "" {

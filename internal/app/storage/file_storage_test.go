@@ -11,7 +11,7 @@ import (
 
 func TestFileStorage_LoadFromBuff(t *testing.T) {
 	type fields struct {
-		FileAccessMutex *sync.Mutex
+		FileAccessMutex *sync.RWMutex
 		memMap          *MemoryMap
 		fileContent     string
 	}
@@ -25,7 +25,7 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 		{
 			name: "Test case #1",
 			fields: fields{
-				FileAccessMutex: &sync.Mutex{},
+				FileAccessMutex: &sync.RWMutex{},
 				memMap:          NewMemoryMap(),
 				fileContent: `{"ShortURL":"c101c693","LongURL":"https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string"}
 {"ShortURL":"7d7cbdab","LongURL":"https://ya.ru"}
@@ -58,7 +58,7 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 
 func TestFileStorage_SaveLongURL(t *testing.T) {
 	type context struct {
-		FileAccessMutex *sync.Mutex
+		FileAccessMutex *sync.RWMutex
 		memMap          *MemoryMap
 		fileContent     string
 	}
@@ -76,7 +76,7 @@ func TestFileStorage_SaveLongURL(t *testing.T) {
 		{
 			name: "Test case #1",
 			context: context{
-				FileAccessMutex: &sync.Mutex{},
+				FileAccessMutex: &sync.RWMutex{},
 				memMap:          NewMemoryMap(),
 			},
 			want:    "c101c693",
