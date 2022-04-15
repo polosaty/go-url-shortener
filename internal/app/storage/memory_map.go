@@ -55,3 +55,13 @@ func (d *MemoryMap) GetLongURL(short URL) (URL, error) {
 
 	return longURL, nil
 }
+
+func (d *MemoryMap) GetUsersUrls(userID string) (result []URLPair) {
+	for short := range d.UserShorts[userID] {
+		result = append(result, URLPair{
+			ShortURL: short,
+			LongURL:  d.urls[short],
+		})
+	}
+	return
+}

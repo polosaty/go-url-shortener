@@ -13,7 +13,7 @@ type FileStorage struct {
 	encoder         *json.Encoder
 }
 
-type Record struct {
+type FileRecord struct {
 	ShortURL URL
 	LongURL  URL
 	UserID   string
@@ -56,7 +56,7 @@ func (d *FileStorage) LoadFromBuff(buf io.Reader) error {
 	defer d.memMap.Mutex.Unlock()
 
 	for {
-		record := &Record{}
+		record := &FileRecord{}
 		if err := decoder.Decode(&record); err != nil {
 			if err == io.EOF {
 				return nil
@@ -76,7 +76,7 @@ func (d *FileStorage) SaveLongURL(long URL, userID string) (URL, error) {
 		return "", err
 	}
 
-	if err = d.encoder.Encode(Record{ShortURL: short, LongURL: long, UserID: userID}); err != nil {
+	if err = d.encoder.Encode(FileRecord{ShortURL: short, LongURL: long, UserID: userID}); err != nil {
 		return "", err
 	}
 
@@ -84,7 +84,9 @@ func (d *FileStorage) SaveLongURL(long URL, userID string) (URL, error) {
 }
 
 func (d *FileStorage) GetLongURL(short URL) (URL, error) {
-	//d.FileAccessMutex.RLock()
-	//defer d.FileAccessMutex.RUnlock()
 	return d.memMap.GetLongURL(short)
+}
+
+func (d *FileStorage) GetUsersUrls(userID string) []URLPair {
+	return d.memMap.GetUsersUrls(userID)
 }

@@ -17,13 +17,13 @@ type Session struct {
 	Sign   []byte
 }
 
-func makeUserId() string {
+func makeUserID() string {
 	return uuid.New().String()
 }
 
 func NewSession() *Session {
 	return &Session{
-		UserID: makeUserId(),
+		UserID: makeUserID(),
 	}
 }
 func (s *Session) makeSignature(secretKey []byte) []byte {
@@ -49,7 +49,7 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 				if errors.Is(err, http.ErrNoCookie) {
 					session = NewSession()
 					session.signSession(secretKey)
-					sessionJson, err := json.Marshal(session)
+					sessionJSON, err := json.Marshal(session)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
 						io.WriteString(w, err.Error())
@@ -58,7 +58,7 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 
 					cookie = &http.Cookie{
 						Name:  "auth",
-						Value: base64.URLEncoding.EncodeToString(sessionJson),
+						Value: base64.URLEncoding.EncodeToString(sessionJSON),
 						//Expires: time.Now().Add(48 * time.Hour),
 					}
 					r.AddCookie(cookie)
@@ -70,13 +70,13 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 				}
 			} else {
 
-				cookieJson, err := base64.URLEncoding.DecodeString(cookie.Value)
+				cookieJSON, err := base64.URLEncoding.DecodeString(cookie.Value)
 				if err != nil {
 					w.WriteHeader(http.StatusBadRequest)
 					io.WriteString(w, err.Error())
 					return
 				}
-				err = json.Unmarshal(cookieJson, &session)
+				err = json.Unmarshal(cookieJSON, &session)
 				if err != nil {
 					w.WriteHeader(http.StatusBadRequest)
 					io.WriteString(w, err.Error())

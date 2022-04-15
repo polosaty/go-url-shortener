@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,19 +20,23 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 
 	var secretKey = []byte("secret key") // TODO: make random and save
 
-	r := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
-	r.Use(gzipInput)
-	r.Use(gzipOutput)
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(authMiddleware(secretKey))
-	r.Post("/", r.PostLongGetShort())
-	r.Post("/api/shorten", r.PostLongGetShortJSON())
-	r.Get("/{short}", r.GetLong())
+	h := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
+	h.Use(gzipInput)
+	h.Use(gzipOutput)
+	h.Use(middleware.RequestID)
+	h.Use(middleware.RealIP)
+	h.Use(middleware.Logger)
+	h.Use(middleware.Recoverer)
+	h.Use(authMiddleware(secretKey))
+	h.Post("/", h.PostLongGetShort())
+	h.Route("/api", func(r chi.Router) {
+		r.Post("/shorten", h.PostLongGetShortJSON())
+		r.Get("/user/urls", h.GetUserUrlsJSON())
+	})
 
-	return r
+	h.Get("/{short}", h.GetLong())
+
+	return h
 }
 
 func (h *MainHandler) GetLong() http.HandlerFunc {
@@ -68,45 +71,6 @@ func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, err = fmt.Fprint(w, h.Location+shortURL.S())
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("write answer error", err)
-			return
-		}
-	}
-}
-
-type PostLongJSONRequest struct {
-	URL storage.URL `json:"url"`
-}
-
-type PostLongJSONResponse struct {
-	Result storage.URL `json:"result"`
-}
-
-func (h *MainHandler) PostLongGetShortJSON() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var requestJSON PostLongJSONRequest
-		var responseJSON PostLongJSONResponse
-
-		session := GetSession(r)
-
-		if err := json.NewDecoder(r.Body).Decode(&requestJSON); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-		shortURL, err := h.Repository.SaveLongURL(requestJSON.URL, session.UserID)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("cant make short url", err)
-			return
-		}
-		responseJSON.Result = storage.URL(h.Location) + shortURL
-		w.WriteHeader(http.StatusCreated)
-		err = json.NewEncoder(w).Encode(responseJSON)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			log.Println("write answer error", err)
