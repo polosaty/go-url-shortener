@@ -11,7 +11,7 @@ func (u *URL) S() string {
 }
 
 type Repository interface {
-	SaveLongURL(long URL) (URL, error)
+	SaveLongURL(long URL, UserID string) (URL, error)
 	GetLongURL(short URL) (URL, error)
 }
 

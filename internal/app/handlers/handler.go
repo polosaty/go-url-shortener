@@ -13,11 +13,13 @@ import (
 
 type MainHandler struct {
 	*chi.Mux
-	storage.Repository
-	Location string
+	Repository storage.Repository
+	Location   string
 }
 
 func NewMainHandler(repository storage.Repository, location string) *MainHandler {
+
+	var secretKey = []byte("secret key") // TODO: make random and save
 
 	r := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
 	r.Use(gzipInput)
@@ -26,6 +28,7 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(authMiddleware(secretKey))
 	r.Post("/", r.PostLongGetShort())
 	r.Post("/api/shorten", r.PostLongGetShortJSON())
 	r.Get("/{short}", r.GetLong())
@@ -48,6 +51,7 @@ func (h *MainHandler) GetLong() http.HandlerFunc {
 
 func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		session := GetSession(r)
 		long, err := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err != nil {
@@ -56,7 +60,7 @@ func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 			return
 		}
 		longStr := storage.URL(long)
-		shortURL, err := h.Repository.SaveLongURL(longStr)
+		shortURL, err := h.Repository.SaveLongURL(longStr, session.UserID)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			log.Println("cant make short url", err)
@@ -85,6 +89,8 @@ func (h *MainHandler) PostLongGetShortJSON() http.HandlerFunc {
 		var requestJSON PostLongJSONRequest
 		var responseJSON PostLongJSONResponse
 
+		session := GetSession(r)
+
 		if err := json.NewDecoder(r.Body).Decode(&requestJSON); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -92,7 +98,7 @@ func (h *MainHandler) PostLongGetShortJSON() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-		shortURL, err := h.Repository.SaveLongURL(requestJSON.URL)
+		shortURL, err := h.Repository.SaveLongURL(requestJSON.URL, session.UserID)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			log.Println("cant make short url", err)

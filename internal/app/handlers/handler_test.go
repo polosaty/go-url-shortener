@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -44,7 +43,7 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 		name        string
 		method      string
 		target      string
-		db          storage.Repository
+		db          map[storage.URL]storage.URL
 		requestBody string
 		want        want
 	}{
@@ -63,9 +62,9 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 			name:   "Test case #2",
 			method: http.MethodGet,
 			target: "/c101c693",
-			db: &storage.MemoryMap{Urls: map[storage.URL]storage.URL{
+			db: map[storage.URL]storage.URL{
 				"c101c693": "https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string",
-			}, Mutex: &sync.RWMutex{}},
+			},
 			want: want{
 				contentType: "text/html; charset=utf-8",
 				statusCode:  307,
@@ -97,12 +96,15 @@ func TestMainHandler_ServeHTTP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			if tt.db == nil {
-				tt.db = &storage.MemoryMap{Urls: make(map[storage.URL]storage.URL), Mutex: &sync.RWMutex{}}
+			repo := storage.NewMemoryMap()
+			if tt.db != nil {
+				//tt.db = &storage.MemoryMap{Urls: make(map[storage.URL]storage.URL), Mutex: &sync.RWMutex{}}
+				for short, long := range tt.db {
+					repo.SetLongURL(long, short, "")
+				}
 			}
 
-			r := NewMainHandler(tt.db, "http://localhost:8080/")
+			r := NewMainHandler(repo, "http://localhost:8080/")
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 

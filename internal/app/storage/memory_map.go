@@ -7,19 +7,21 @@ import (
 )
 
 type MemoryMap struct {
-	Mutex *sync.RWMutex
-	Urls  map[URL]URL
+	Mutex      *sync.RWMutex
+	urls       map[URL]URL
+	UserShorts map[string]map[URL]struct{}
 }
 
 func NewMemoryMap() *MemoryMap {
 	db := &MemoryMap{
-		Urls:  make(map[URL]URL),
-		Mutex: &sync.RWMutex{},
+		urls:       make(map[URL]URL),
+		Mutex:      &sync.RWMutex{},
+		UserShorts: make(map[string]map[URL]struct{}),
 	}
 	return db
 }
 
-func (d *MemoryMap) SaveLongURL(long URL) (URL, error) {
+func (d *MemoryMap) SaveLongURL(long URL, userID string) (URL, error) {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 
@@ -28,15 +30,25 @@ func (d *MemoryMap) SaveLongURL(long URL) (URL, error) {
 		return "", fmt.Errorf("cant make short url: %w", err)
 	}
 	shortURL := URL(strconv.FormatUint(uint64(short), 16))
-	d.Urls[shortURL] = long
+	d.SetLongURL(long, shortURL, userID)
 	return shortURL, nil
+}
+
+func (d *MemoryMap) SetLongURL(long URL, short URL, userID string) {
+	d.urls[short] = long
+	userShorts, exists := d.UserShorts[userID]
+	if !exists {
+		userShorts = make(map[URL]struct{})
+		d.UserShorts[userID] = userShorts
+	}
+	userShorts[short] = struct{}{}
 }
 
 func (d *MemoryMap) GetLongURL(short URL) (URL, error) {
 	d.Mutex.RLock()
 	defer d.Mutex.RUnlock()
 
-	longURL := d.Urls[short]
+	longURL := d.urls[short]
 	if longURL == "" {
 		return longURL, fmt.Errorf("short url not registered")
 	}
