@@ -48,7 +48,6 @@ func (h *MainHandler) PingDB() http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 }
 

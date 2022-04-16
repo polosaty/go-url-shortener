@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go-url-shortener/internal/app/storage"
@@ -169,8 +170,8 @@ func TestMainHandlerApi(t *testing.T) {
 			want: want{
 				contentType: "application/json; charset=utf-8",
 				statusCode:  200,
-				body: `[{"short_url":"http://localhost:8080/ac5a78ac","original_url":"https://ya.ru/1123333"},{"short_url":"http://localhost:8080/b3f51159","original_url":"https://ya.ru/1123"}]
-`,
+				body: `[{"short_url":"http://localhost:8080/ac5a78ac","original_url":"https://ya.ru/1123333"},
+						{"short_url":"http://localhost:8080/b3f51159","original_url":"https://ya.ru/1123"}]`,
 			},
 			db: []record{
 				{UserID: "370230df-159e-4aec-9f18-922f9c0be328", ShortURL: "ac5a78ac",
@@ -217,8 +218,17 @@ func TestMainHandlerApi(t *testing.T) {
 			// получаем и проверяем тело запроса
 			switch resp.Header.Get("Content-Type") {
 			case "application/json; charset=utf-8":
-				assert.JSONEq(t, tt.want.body, respBody,
-					"Expected body [%s], got [%s]", tt.want.body, respBody)
+				//assert.JSONEq(t, tt.want.body, respBody,
+				//	"Expected body [%s], got [%s]", tt.want.body, respBody)
+
+				//workaround: compare json without order
+				var wantJSON GetUserUrlsJSONResponse
+				var respJSON GetUserUrlsJSONResponse
+				err := json.Unmarshal([]byte(tt.want.body), &wantJSON)
+				assert.NoError(t, err)
+				err = json.Unmarshal([]byte(respBody), &respJSON)
+				assert.NoError(t, err)
+				assert.ElementsMatch(t, wantJSON, respJSON)
 			default:
 				assert.Equal(t, tt.want.body, respBody,
 					"Expected body [%s], got [%s]", tt.want.body, respBody)
