@@ -19,6 +19,7 @@ type Repository interface {
 	SaveLongURL(long URL, userID string) (URL, error)
 	GetLongURL(short URL) (URL, error)
 	GetUsersUrls(userID string) []URLPair
+	Ping() bool
 }
 
 func Hash(s string) (uint32, error) {

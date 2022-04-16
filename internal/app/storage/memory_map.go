@@ -7,15 +7,18 @@ import (
 )
 
 type MemoryMap struct {
-	Mutex      *sync.RWMutex
+	Mutex      sync.RWMutex
 	urls       map[URL]URL
 	UserShorts map[string]map[URL]struct{}
+}
+
+func (d *MemoryMap) Ping() bool {
+	return true
 }
 
 func NewMemoryMap() *MemoryMap {
 	db := &MemoryMap{
 		urls:       make(map[URL]URL),
-		Mutex:      &sync.RWMutex{},
 		UserShorts: make(map[string]map[URL]struct{}),
 	}
 	return db

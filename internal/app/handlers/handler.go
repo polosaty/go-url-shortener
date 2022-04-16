@@ -29,6 +29,7 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 	h.Use(middleware.Recoverer)
 	h.Use(authMiddleware(secretKey))
 	h.Post("/", h.PostLongGetShort())
+	h.Get("/ping", h.PingDB())
 	h.Route("/api", func(r chi.Router) {
 		r.Post("/shorten", h.PostLongGetShortJSON())
 		r.Get("/user/urls", h.GetUserUrlsJSON())
@@ -37,6 +38,18 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 	h.Get("/{short}", h.GetLong())
 
 	return h
+}
+
+func (h *MainHandler) PingDB() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.Repository.Ping() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *MainHandler) GetLong() http.HandlerFunc {

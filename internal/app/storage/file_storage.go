@@ -90,3 +90,7 @@ func (d *FileStorage) GetLongURL(short URL) (URL, error) {
 func (d *FileStorage) GetUsersUrls(userID string) []URLPair {
 	return d.memMap.GetUsersUrls(userID)
 }
+
+func (d *FileStorage) Ping() bool {
+	return d.memMap.Ping()
+}
