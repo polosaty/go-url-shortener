@@ -5,15 +5,13 @@ import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sync"
 	"testing"
 )
 
 func TestFileStorage_LoadFromBuff(t *testing.T) {
 	type fields struct {
-		FileAccessMutex sync.RWMutex
-		memMap          *MemoryMap
-		fileContent     string
+		memMap      *MemoryMap
+		fileContent string
 	}
 
 	tests := []struct {
@@ -60,9 +58,8 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 
 func TestFileStorage_SaveLongURL(t *testing.T) {
 	type context struct {
-		FileAccessMutex sync.RWMutex
-		memMap          *MemoryMap
-		fileContent     string
+		memMap      *MemoryMap
+		fileContent string
 	}
 	type args struct {
 		long   URL
@@ -79,8 +76,7 @@ func TestFileStorage_SaveLongURL(t *testing.T) {
 		{
 			name: "Test case #1",
 			context: context{
-				FileAccessMutex: sync.RWMutex{},
-				memMap:          NewMemoryMap(),
+				memMap: NewMemoryMap(),
 			},
 			want:    "c101c693",
 			args:    args{long: "https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string", userID: "some_id"},
@@ -95,9 +91,8 @@ func TestFileStorage_SaveLongURL(t *testing.T) {
 			buffer.WriteString(tt.context.fileContent)
 
 			d := &FileStorage{
-				FileAccessMutex: tt.context.FileAccessMutex,
-				memMap:          tt.context.memMap,
-				encoder:         json.NewEncoder(&buffer),
+				memMap:  tt.context.memMap,
+				encoder: json.NewEncoder(&buffer),
 			}
 			short, err := d.SaveLongURL(tt.args.long, tt.args.userID)
 			require.Equal(t, tt.wantErr, err)

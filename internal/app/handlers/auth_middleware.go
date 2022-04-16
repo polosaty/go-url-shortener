@@ -40,6 +40,10 @@ func (s *Session) checkSignature(secretKey []byte) bool {
 	return hmac.Equal(s.Sign, s.makeSignature(secretKey))
 }
 
+type RequestContextKeyType string
+
+const RequestContextKey = RequestContextKeyType("Session")
+
 func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +93,7 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 				}
 			}
 
-			r = r.WithContext(context.WithValue(r.Context(), interface{}("Session"), session))
+			r = r.WithContext(context.WithValue(r.Context(), RequestContextKey, session))
 
 			next.ServeHTTP(w, r)
 		})
@@ -97,7 +101,7 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 }
 
 func GetSession(req *http.Request) *Session {
-	sessCtx := req.Context().Value("Session")
+	sessCtx := req.Context().Value(RequestContextKey)
 	sess, _ := sessCtx.(*Session)
 	return sess
 }
