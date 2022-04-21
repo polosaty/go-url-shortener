@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	pgx "github.com/jackc/pgx/v4"
-	"strconv"
+	"log"
 )
 
 type PG struct {
+	Repository
 	db     *pgx.Conn
 	memMap *MemoryMap
 }
@@ -98,16 +99,12 @@ func (d *PG) Close() error {
 }
 
 func (d *PG) SaveLongURL(long URL, userID string) (URL, error) {
-
-	short, err := Hash(long.S())
+	shortURL, err := makeShort(long)
 	if err != nil {
 		return "", fmt.Errorf("cantnot generate short url: %w", err)
 	}
 
-	shortURL := URL(strconv.FormatUint(uint64(short), 16))
-
 	var userPK int64
-
 	userPK, err = d.getOrCreateUser(userID)
 	if err != nil {
 		return "", fmt.Errorf("cantnot get or create user: %w", err)
@@ -122,6 +119,58 @@ func (d *PG) SaveLongURL(long URL, userID string) (URL, error) {
 	}
 
 	return shortURL, nil
+}
+
+func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]CorrelationShortPair, error) {
+	ctx := context.Background() // TODO: take context from request
+	userPK, err := d.getOrCreateUser(userID)
+	if err != nil {
+		return nil, fmt.Errorf("cantnot get or create user: %w", err)
+	}
+
+	//insertUrlsStmt, err := d.db.Prepare(
+	//	ctx,
+	//	"insert_urls_stmt",
+	//	`INSERT INTO "url" ("short", "long", "user_id") VALUES($1, $2, $3)
+	//		ON CONFLICT ("short") DO NOTHING`)
+	//, shortURL, long, userPK
+	//if err != nil {
+	//	return nil, fmt.Errorf("cantnot prepare insert: %w", err)
+	//}
+
+	result := make([]CorrelationShortPair, 0, len(longURLS))
+
+	type rowStruct struct {
+		Short  string
+		Long   string
+		UserPK int64
+	}
+	copyFromRows := make([]rowStruct, 0, len(longURLS))
+	for _, p := range longURLS {
+
+		shortURL, err := makeShort(p.LongURL)
+		if err != nil {
+			log.Printf("cantnot generate short url: %v for url: %v", err, p.LongURL)
+			continue
+		}
+
+		copyFromRows = append(copyFromRows, rowStruct{shortURL.S(), p.LongURL.S(), userPK})
+		result = append(result, CorrelationShortPair{p.CorrelationID, shortURL})
+	}
+	_, err = d.db.CopyFrom(
+		ctx,
+		pgx.Identifier{"url"},
+		[]string{"short", "long", "user_id"},
+		pgx.CopyFromSlice(len(copyFromRows), func(i int) ([]interface{}, error) {
+			row := copyFromRows[i]
+			return []interface{}{row.Short, row.Long, row.UserPK}, nil
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("cantnot insert rows: %w", err)
+	}
+
+	return result, nil
 }
 
 func (d *PG) getOrCreateUser(userUUID string) (userPK int64, err error) {

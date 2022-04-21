@@ -31,7 +31,10 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 	h.Post("/", h.PostLongGetShort())
 	h.Get("/ping", h.PingDB())
 	h.Route("/api", func(r chi.Router) {
-		r.Post("/shorten", h.PostLongGetShortJSON())
+		r.Route("/shorten", func(r chi.Router) {
+			r.Post("/", h.PostLongGetShortJSON())
+			r.Post("/batch", h.PostLongGetShortBatchJSON())
+		})
 		r.Get("/user/urls", h.GetUserUrlsJSON())
 	})
 

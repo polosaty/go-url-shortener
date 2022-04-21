@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"sync"
 )
@@ -93,4 +94,18 @@ func (d *FileStorage) GetUsersUrls(userID string) []URLPair {
 
 func (d *FileStorage) Ping() bool {
 	return d.memMap.Ping()
+}
+
+func (d *FileStorage) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]CorrelationShortPair, error) {
+	result := make([]CorrelationShortPair, 0, len(longURLS))
+	for _, p := range longURLS {
+
+		short, err := d.SaveLongURL(p.LongURL, userID)
+		if err != nil {
+			log.Printf("SaveLongBatchURL error(%v):  cant shor url %v", err, p.LongURL)
+			continue
+		}
+		result = append(result, CorrelationShortPair{p.CorrelationID, short})
+	}
+	return result, nil
 }

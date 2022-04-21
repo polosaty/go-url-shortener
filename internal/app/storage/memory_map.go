@@ -2,7 +2,7 @@ package storage
 
 import (
 	"fmt"
-	"strconv"
+	"log"
 	"sync"
 )
 
@@ -28,11 +28,10 @@ func (d *MemoryMap) SaveLongURL(long URL, userID string) (URL, error) {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 
-	short, err := Hash(long.S())
+	shortURL, err := makeShort(long)
 	if err != nil {
-		return "", fmt.Errorf("cant make short url: %w", err)
+		return "", fmt.Errorf("cantnot generate short url: %w", err)
 	}
-	shortURL := URL(strconv.FormatUint(uint64(short), 16))
 	d.SetLongURL(long, shortURL, userID)
 	return shortURL, nil
 }
@@ -67,4 +66,18 @@ func (d *MemoryMap) GetUsersUrls(userID string) (result []URLPair) {
 		})
 	}
 	return
+}
+
+func (d *MemoryMap) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]CorrelationShortPair, error) {
+	result := make([]CorrelationShortPair, 0, len(longURLS))
+	for _, p := range longURLS {
+
+		short, err := d.SaveLongURL(p.LongURL, userID)
+		if err != nil {
+			log.Printf("SaveLongBatchURL error(%v):  cant shor url %v", err, p.LongURL)
+			continue
+		}
+		result = append(result, CorrelationShortPair{p.CorrelationID, short})
+	}
+	return result, nil
 }
