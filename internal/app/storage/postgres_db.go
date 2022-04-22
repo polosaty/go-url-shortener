@@ -37,17 +37,16 @@ func NewPG(dsn string) (*PG, error) {
 }
 
 func (d *PG) Migrate() error {
+	ctx := context.Background()
+
 	_, err := d.db.Exec(
-		context.Background(),
-		`CREATE table IF NOT EXISTS "revision" (version BIGSERIAL CONSTRAINT revision_version_pk PRIMARY KEY)`)
+		ctx, `CREATE TABLE IF NOT EXISTS "revision" (version BIGSERIAL CONSTRAINT revision_version_pk PRIMARY KEY)`)
 	if err != nil {
 		return fmt.Errorf("cannot get or create table revision: %w", err)
 	}
 	var version int64
 	err = d.db.QueryRow(
-		context.Background(),
-		"SELECT version FROM revision ORDER BY version DESC LIMIT 1").
-		Scan(&version)
+		ctx, "SELECT version FROM revision ORDER BY version DESC LIMIT 1").Scan(&version)
 
 	if err != nil &&
 		!(errors.Is(err, ErrNoRows)) {
@@ -62,34 +61,26 @@ func (d *PG) Migrate() error {
 func (d *PG) migration1() error {
 	_, err := d.db.Exec(
 		context.Background(),
-		`create table "user" (
-    id   bigserial
-        constraint user_id_pk
-            primary key,
-    uuid uuid
+		`
+CREATE TABLE "user" (
+    id   bigserial CONSTRAINT user_id_pk PRIMARY KEY,
+    uuid UUID
 );
 
-alter table "user"
-owner to postgres;
+CREATE UNIQUE INDEX IF NOT EXISTS user_uuid_uindex on "user"(uuid);
 
-create unique index user_uuid_uindex
-    on "user"(uuid);
-
-create table url (
-    short   varchar(255)
-        constraint url_short_pk
-            primary key,
-    long    text,
-    user_id bigint
-        constraint url_user_id_fk
+CREATE TABLE url (
+    short   VARCHAR(255) CONSTRAINT url_short_pk PRIMARY KEY,
+    long    TEXT,
+    user_id BIGINT
+        CONSTRAINT url_user_id_fk
             references "user"
-            on update cascade on delete set null
+            ON UPDATE CASCADE ON DELETE SET NULL
 );
 
-create unique index url_short_uindex
-    on url(short);
+CREATE UNIQUE INDEX IF NOT EXISTS url_short_uindex ON url(short);
 
-INSERT INTO revision values(1);  
+INSERT INTO revision VALUES(1);  
 `)
 	return err
 }
@@ -101,21 +92,24 @@ func (d *PG) Close() error {
 func (d *PG) SaveLongURL(long URL, userID string) (URL, error) {
 	shortURL, err := makeShort(long)
 	if err != nil {
-		return "", fmt.Errorf("cantnot generate short url: %w", err)
+		return "", fmt.Errorf("cannot generate short url: %w", err)
 	}
 
 	var userPK int64
 	userPK, err = d.getOrCreateUser(userID)
 	if err != nil {
-		return "", fmt.Errorf("cantnot get or create user: %w", err)
+		return "", fmt.Errorf("cannot get or create user: %w", err)
 	}
 
-	_, err = d.db.Exec(context.Background(),
+	ct, err := d.db.Exec(context.Background(),
 		`INSERT INTO "url" ("short", "long", "user_id") VALUES($1, $2, $3) 
-			ON CONFLICT ("short") DO NOTHING`, shortURL, long, userPK)
+			ON CONFLICT ("short") DO NOTHING RETURNING "short"`, shortURL, long, userPK)
 
 	if err != nil {
-		return "", fmt.Errorf("cantnot save url to db: %w", err)
+		return "", fmt.Errorf("cannot save url to db: %w", err)
+	}
+	if ct.RowsAffected() < 1 {
+		return shortURL, NewConflictURLError(shortURL, ErrConflictURL)
 	}
 
 	return shortURL, nil
@@ -125,7 +119,7 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 	ctx := context.Background() // TODO: take context from request
 	userPK, err := d.getOrCreateUser(userID)
 	if err != nil {
-		return nil, fmt.Errorf("cantnot get or create user: %w", err)
+		return nil, fmt.Errorf("cannot get or create user: %w", err)
 	}
 
 	//insertUrlsStmt, err := d.db.Prepare(
@@ -135,7 +129,7 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 	//		ON CONFLICT ("short") DO NOTHING`)
 	//, shortURL, long, userPK
 	//if err != nil {
-	//	return nil, fmt.Errorf("cantnot prepare insert: %w", err)
+	//	return nil, fmt.Errorf("cannot prepare insert: %w", err)
 	//}
 
 	result := make([]CorrelationShortPair, 0, len(longURLS))
@@ -150,13 +144,14 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 
 		shortURL, err := makeShort(p.LongURL)
 		if err != nil {
-			log.Printf("cantnot generate short url: %v for url: %v", err, p.LongURL)
+			log.Printf("cannot generate short url: %v for url: %v", err, p.LongURL)
 			continue
 		}
 
 		copyFromRows = append(copyFromRows, rowStruct{shortURL.S(), p.LongURL.S(), userPK})
 		result = append(result, CorrelationShortPair{p.CorrelationID, shortURL})
 	}
+	//FIXME: cannot insert rows: ERROR: duplicate key value violates unique constraint "url_short_pk" (SQLSTATE 23505)
 	_, err = d.db.CopyFrom(
 		ctx,
 		pgx.Identifier{"url"},
@@ -167,7 +162,7 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cantnot insert rows: %w", err)
+		return nil, fmt.Errorf("cannot insert rows: %w", err)
 	}
 
 	return result, nil
@@ -202,7 +197,7 @@ func (d *PG) GetLongURL(short URL) (URL, error) {
 	return long, nil
 }
 
-func (d *PG) GetUsersUrls(userID string) []URLPair {
+func (d *PG) GetUsersURLs(userID string) []URLPair {
 	rows, err := d.db.Query(context.Background(),
 		`SELECT "long", "short" FROM "url" 
 		JOIN "user" ON "user".id = "url".user_id

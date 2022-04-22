@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -78,16 +79,26 @@ func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 			return
 		}
 		longStr := storage.URL(long)
+		status := http.StatusCreated
 		shortURL, err := h.Repository.SaveLongURL(longStr, session.UserID)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("cant make short url", err)
-			return
+			if errors.Is(err, storage.ErrConflictURL) {
+				status = http.StatusConflict
+				var e *storage.ConflictURLError
+				if errors.As(err, &e) {
+					shortURL = e.ShortURL
+				}
+
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				log.Println("cant make short url", err)
+				return
+			}
 		}
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(status)
 		_, err = fmt.Fprint(w, h.Location+shortURL.S())
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusInternalServerError)
 			log.Println("write answer error", err)
 			return
 		}

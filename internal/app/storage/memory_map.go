@@ -30,7 +30,7 @@ func (d *MemoryMap) SaveLongURL(long URL, userID string) (URL, error) {
 
 	shortURL, err := makeShort(long)
 	if err != nil {
-		return "", fmt.Errorf("cantnot generate short url: %w", err)
+		return "", fmt.Errorf("cannot generate short url: %w", err)
 	}
 	d.SetLongURL(long, shortURL, userID)
 	return shortURL, nil
@@ -58,7 +58,7 @@ func (d *MemoryMap) GetLongURL(short URL) (URL, error) {
 	return longURL, nil
 }
 
-func (d *MemoryMap) GetUsersUrls(userID string) (result []URLPair) {
+func (d *MemoryMap) GetUsersURLs(userID string) (result []URLPair) {
 	for short := range d.UserShorts[userID] {
 		result = append(result, URLPair{
 			ShortURL: short,

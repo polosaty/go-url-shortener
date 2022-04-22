@@ -88,8 +88,8 @@ func (d *FileStorage) GetLongURL(short URL) (URL, error) {
 	return d.memMap.GetLongURL(short)
 }
 
-func (d *FileStorage) GetUsersUrls(userID string) []URLPair {
-	return d.memMap.GetUsersUrls(userID)
+func (d *FileStorage) GetUsersURLs(userID string) []URLPair {
+	return d.memMap.GetUsersURLs(userID)
 }
 
 func (d *FileStorage) Ping() bool {

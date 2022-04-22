@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"go-url-shortener/internal/app/storage"
 	"log"
 	"net/http"
@@ -13,7 +14,7 @@ func (h *MainHandler) GetUserUrlsJSON() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var responseJSON GetUserUrlsJSONResponse
 		session := GetSession(r)
-		responseJSON = h.Repository.GetUsersUrls(session.UserID)
+		responseJSON = h.Repository.GetUsersURLs(session.UserID)
 		for indx, record := range responseJSON {
 			responseJSON[indx].ShortURL = storage.URL(h.Location + record.ShortURL.S())
 		}
@@ -53,18 +54,27 @@ func (h *MainHandler) PostLongGetShortJSON() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
+		status := http.StatusCreated
 		shortURL, err := h.Repository.SaveLongURL(requestJSON.URL, session.UserID)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("cant make short url", err)
-			return
+			if errors.Is(err, storage.ErrConflictURL) {
+				status = http.StatusConflict
+				var e *storage.ConflictURLError
+				if errors.As(err, &e) {
+					shortURL = e.ShortURL
+				}
+
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				log.Println("cant make short url", err)
+				return
+			}
 		}
 		responseJSON.Result = storage.URL(h.Location) + shortURL
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(status)
 		err = json.NewEncoder(w).Encode(responseJSON)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusInternalServerError)
 			log.Println("write answer error", err)
 			return
 		}
