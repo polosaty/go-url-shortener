@@ -81,3 +81,13 @@ func (d *MemoryMap) SaveLongBatchURL(longURLS []CorrelationLongPair, userID stri
 	}
 	return result, nil
 }
+
+func (d *MemoryMap) DeleteUsersURLs(userID string, shortUrls ...URL) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d *MemoryMap) DelayedDeleteUsersURLs(userID string, shortUrls ...URL) error {
+	//TODO implement me
+	panic("implement me")
+}

@@ -37,6 +37,7 @@ func NewMainHandler(repository storage.Repository, location string) *MainHandler
 			r.Post("/batch", h.PostLongGetShortBatchJSON())
 		})
 		r.Get("/user/urls", h.GetUserUrlsJSON())
+		r.Delete("/user/urls", h.DeleteUserShortUrlsJSON())
 	})
 
 	h.Get("/{short}", h.GetLong())
@@ -61,6 +62,10 @@ func (h *MainHandler) GetLong() http.HandlerFunc {
 		short := chi.URLParam(r, "short")
 		long, err := h.Repository.GetLongURL(storage.URL(short))
 		if err != nil {
+			if errors.Is(err, storage.ErrDeletedURL) {
+				w.WriteHeader(http.StatusGone)
+				return
+			}
 			http.NotFound(w, r)
 			return
 		}

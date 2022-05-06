@@ -33,6 +33,8 @@ type Repository interface {
 	SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]CorrelationShortPair, error)
 	GetLongURL(short URL) (URL, error)
 	GetUsersURLs(userID string) []URLPair
+	DeleteUsersURLs(userID string, shortUrls ...URL) error
+	DelayedDeleteUsersURLs(userID string, shortUrls ...URL) error
 	Ping() bool
 }
 
@@ -52,6 +54,7 @@ func makeShort(long URL) (URL, error) {
 }
 
 var ErrConflictURL = errors.New("url already exists")
+var ErrDeletedURL = errors.New("url deleted")
 
 type ConflictURLError struct {
 	Err      error
