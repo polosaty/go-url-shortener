@@ -61,6 +61,7 @@ func authMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 					}
 
 					cookie = &http.Cookie{
+						Path:  "/",
 						Name:  "auth",
 						Value: base64.URLEncoding.EncodeToString(sessionJSON),
 						//Expires: time.Now().Add(48 * time.Hour),
