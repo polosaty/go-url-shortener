@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,24 +13,46 @@ import (
 
 type MainHandler struct {
 	*chi.Mux
-	storage.Repository
-	Location string
+	Repository storage.Repository
+	Location   string
 }
 
 func NewMainHandler(repository storage.Repository, location string) *MainHandler {
 
-	r := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
-	r.Use(gzipInput)
-	r.Use(gzipOutput)
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Post("/", r.PostLongGetShort())
-	r.Post("/api/shorten", r.PostLongGetShortJSON())
-	r.Get("/{short}", r.GetLong())
+	var secretKey = []byte("secret key") // TODO: make random and save
 
-	return r
+	h := &MainHandler{Mux: chi.NewMux(), Repository: repository, Location: location}
+	h.Use(gzipInput)
+	h.Use(gzipOutput)
+	h.Use(middleware.RequestID)
+	h.Use(middleware.RealIP)
+	h.Use(middleware.Logger)
+	h.Use(middleware.Recoverer)
+	h.Use(authMiddleware(secretKey))
+	h.Post("/", h.PostLongGetShort())
+	h.Get("/ping", h.PingDB())
+	h.Route("/api", func(r chi.Router) {
+		r.Route("/shorten", func(r chi.Router) {
+			r.Post("/", h.PostLongGetShortJSON())
+			r.Post("/batch", h.PostLongGetShortBatchJSON())
+		})
+		r.Get("/user/urls", h.GetUserUrlsJSON())
+	})
+
+	h.Get("/{short}", h.GetLong())
+
+	return h
+}
+
+func (h *MainHandler) PingDB() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.Repository.Ping() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func (h *MainHandler) GetLong() http.HandlerFunc {
@@ -48,6 +70,7 @@ func (h *MainHandler) GetLong() http.HandlerFunc {
 
 func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		session := GetSession(r)
 		long, err := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err != nil {
@@ -56,53 +79,26 @@ func (h *MainHandler) PostLongGetShort() http.HandlerFunc {
 			return
 		}
 		longStr := storage.URL(long)
-		shortURL, err := h.Repository.SaveLongURL(longStr)
+		status := http.StatusCreated
+		shortURL, err := h.Repository.SaveLongURL(longStr, session.UserID)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("cant make short url", err)
-			return
+			if errors.Is(err, storage.ErrConflictURL) {
+				status = http.StatusConflict
+				var e *storage.ConflictURLError
+				if errors.As(err, &e) {
+					shortURL = e.ShortURL
+				}
+
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				log.Println("cant make short url", err)
+				return
+			}
 		}
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(status)
 		_, err = fmt.Fprint(w, h.Location+shortURL.S())
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("write answer error", err)
-			return
-		}
-	}
-}
-
-type PostLongJSONRequest struct {
-	URL storage.URL `json:"url"`
-}
-
-type PostLongJSONResponse struct {
-	Result storage.URL `json:"result"`
-}
-
-func (h *MainHandler) PostLongGetShortJSON() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var requestJSON PostLongJSONRequest
-		var responseJSON PostLongJSONResponse
-
-		if err := json.NewDecoder(r.Body).Decode(&requestJSON); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-		shortURL, err := h.Repository.SaveLongURL(requestJSON.URL)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			log.Println("cant make short url", err)
-			return
-		}
-		responseJSON.Result = storage.URL(h.Location) + shortURL
-		w.WriteHeader(http.StatusCreated)
-		err = json.NewEncoder(w).Encode(responseJSON)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusInternalServerError)
 			log.Println("write answer error", err)
 			return
 		}

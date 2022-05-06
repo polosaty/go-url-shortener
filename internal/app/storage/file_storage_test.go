@@ -5,15 +5,13 @@ import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sync"
 	"testing"
 )
 
 func TestFileStorage_LoadFromBuff(t *testing.T) {
 	type fields struct {
-		FileAccessMutex *sync.RWMutex
-		memMap          *MemoryMap
-		fileContent     string
+		memMap      *MemoryMap
+		fileContent string
 	}
 
 	tests := []struct {
@@ -25,8 +23,7 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 		{
 			name: "Test case #1",
 			fields: fields{
-				FileAccessMutex: &sync.RWMutex{},
-				memMap:          NewMemoryMap(),
+				memMap: NewMemoryMap(),
 				fileContent: `{"ShortURL":"c101c693","LongURL":"https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string"}
 {"ShortURL":"7d7cbdab","LongURL":"https://ya.ru"}
 `,
@@ -42,15 +39,18 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &FileStorage{
-				FileAccessMutex: tt.fields.FileAccessMutex,
-				memMap:          tt.fields.memMap,
+				memMap: tt.fields.memMap,
 				//encoder:         nil,
 			}
 			buffer := bytes.Buffer{}
 			buffer.WriteString(tt.fields.fileContent)
 			err := d.LoadFromBuff(&buffer)
 			assert.Equal(t, tt.wantErr, err)
-			assert.Equal(t, tt.wantMap, d.memMap.Urls)
+			for short, wantLong := range tt.wantMap {
+				memLong, err := d.memMap.GetLongURL(short)
+				assert.NoError(t, err)
+				assert.Equal(t, wantLong, memLong)
+			}
 
 		})
 	}
@@ -58,12 +58,12 @@ func TestFileStorage_LoadFromBuff(t *testing.T) {
 
 func TestFileStorage_SaveLongURL(t *testing.T) {
 	type context struct {
-		FileAccessMutex *sync.RWMutex
-		memMap          *MemoryMap
-		fileContent     string
+		memMap      *MemoryMap
+		fileContent string
 	}
 	type args struct {
-		long URL
+		long   URL
+		userID string
 	}
 	tests := []struct {
 		name            string
@@ -76,13 +76,12 @@ func TestFileStorage_SaveLongURL(t *testing.T) {
 		{
 			name: "Test case #1",
 			context: context{
-				FileAccessMutex: &sync.RWMutex{},
-				memMap:          NewMemoryMap(),
+				memMap: NewMemoryMap(),
 			},
 			want:    "c101c693",
-			args:    args{long: "https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string"},
+			args:    args{long: "https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string", userID: "some_id"},
 			wantErr: nil,
-			wantFileContent: `{"ShortURL":"c101c693","LongURL":"https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string"}
+			wantFileContent: `{"ShortURL":"c101c693","LongURL":"https://stackoverflow.com/questions/24886015/how-to-convert-uint32-to-string","UserID":"some_id"}
 `,
 		},
 	}
@@ -92,11 +91,10 @@ func TestFileStorage_SaveLongURL(t *testing.T) {
 			buffer.WriteString(tt.context.fileContent)
 
 			d := &FileStorage{
-				FileAccessMutex: tt.context.FileAccessMutex,
-				memMap:          tt.context.memMap,
-				encoder:         json.NewEncoder(&buffer),
+				memMap:  tt.context.memMap,
+				encoder: json.NewEncoder(&buffer),
 			}
-			short, err := d.SaveLongURL(tt.args.long)
+			short, err := d.SaveLongURL(tt.args.long, tt.args.userID)
 			require.Equal(t, tt.wantErr, err)
 			assert.Equalf(t, tt.want, short, "SaveLongURL(%v)", tt.args.long)
 			assert.Equal(t, tt.wantFileContent, buffer.String())

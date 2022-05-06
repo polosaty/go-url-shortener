@@ -1,0 +1,29 @@
+version: '2.4'
+
+services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_DB: shorturl
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    command: ["postgres", "-c", "log_statement=all"]
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ../go-url-shortener-db/:/var/lib/postgresql/data/
+
+  app:
+    build:
+      context: ../
+      dockerfile: build/Dockerfile
+    image: go-url-shortener
+    entrypoint: /docker-app
+    depends_on:
+      - db
+    environment:
+      DATABASE_DSN: postgres://postgres:password@db/shorturl
+      SERVER_ADDRESS: 0.0.0.0:8080
+      BASE_URL: http://127.0.0.1:8080/
+    ports:
+      - "127.0.0.1:8080:8080"
