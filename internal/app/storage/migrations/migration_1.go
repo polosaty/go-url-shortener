@@ -2,10 +2,9 @@ package migrations
 
 import (
 	"context"
-	"github.com/jackc/pgx/v4"
 )
 
-func migration1(ctx context.Context, db *pgx.Conn) error {
+func migration1(ctx context.Context, db PgxIface) error {
 	_, err := db.Exec(
 		ctx,
 		`

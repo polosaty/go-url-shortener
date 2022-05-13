@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jackc/pgconn"
 	pgx "github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"go-url-shortener/internal/app/storage/migrations"
 	"log"
 	"sync"
@@ -25,8 +26,9 @@ type PgxIface interface {
 	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...interface{}) pgx.Row
 	Ping(context.Context) error
-	Prepare(context.Context, string, string) (*pgconn.StatementDescription, error)
-	Close(context.Context) error
+	//Prepare(context.Context, string, string) (*pgconn.StatementDescription, error)
+	//Close(context.Context) error
+	Close()
 }
 
 type PG struct {
@@ -45,9 +47,15 @@ func newDeleteUserUrls() *delayedUserUrlsDeleter {
 
 func NewPG(dsn string) (*PG, error) {
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, dsn)
+	conf, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		//log.Fatal("Unable to connect to database: %v\n", err)
+		return nil, fmt.Errorf("unable to connect: parse dsn problem (dsn=%v): %w", dsn, err)
+	}
+
+	conf.MaxConns = 10
+	conn, err := pgxpool.ConnectConfig(ctx, conf)
+
+	if err != nil {
 		return nil, fmt.Errorf("unable to connect to database(dsn=%v): %w", dsn, err)
 	}
 
@@ -64,7 +72,9 @@ func NewPG(dsn string) (*PG, error) {
 
 func (d *PG) Close() error {
 	d.delayedDeleter.Stop()
-	return d.db.Close(context.Background())
+	d.db.Close()
+	return nil
+	//return d.db.Close(context.Background())
 }
 
 func (d *delayedUserUrlsDeleter) Stop() {

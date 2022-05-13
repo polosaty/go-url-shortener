@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"context"
 	"fmt"
 	"github.com/pashagolub/pgxmock"
 	"github.com/stretchr/testify/assert"
@@ -10,7 +9,7 @@ import (
 )
 
 func TestPG_SaveLongURL(t *testing.T) {
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
@@ -28,7 +27,8 @@ func TestPG_SaveLongURL(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
-	defer mock.Close(context.Background())
+	//defer mock.Close(context.Background())
+	defer mock.Close()
 	type fields struct {
 		db             PgxIface
 		delayedDeleter *delayedUserUrlsDeleter
@@ -72,7 +72,7 @@ func TestPG_SaveLongURL(t *testing.T) {
 }
 
 func TestPG_GetUsersURLs(t *testing.T) {
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
@@ -120,7 +120,7 @@ func TestPG_GetUsersURLs(t *testing.T) {
 }
 
 func TestPG_DelayedDeleteUsersURLs(t *testing.T) {
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
