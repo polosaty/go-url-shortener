@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgconn"
 	pgx "github.com/jackc/pgx/v4"
 	"go-url-shortener/internal/app/storage/migrations"
 	"log"
@@ -17,9 +18,20 @@ type delayedUserUrlsDeleter struct {
 	done     chan struct{}
 }
 
+type PgxIface interface {
+	Begin(context.Context) (pgx.Tx, error)
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+	Ping(context.Context) error
+	Prepare(context.Context, string, string) (*pgconn.StatementDescription, error)
+	Close(context.Context) error
+}
+
 type PG struct {
 	Repository
-	db             *pgx.Conn
+	db             PgxIface
 	delayedDeleter *delayedUserUrlsDeleter
 }
 
