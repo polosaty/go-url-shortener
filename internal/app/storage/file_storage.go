@@ -109,3 +109,13 @@ func (d *FileStorage) SaveLongBatchURL(longURLS []CorrelationLongPair, userID st
 	}
 	return result, nil
 }
+
+func (d *FileStorage) DeleteUsersURLs(userID string, shortUrls ...URL) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d *FileStorage) DelayedDeleteUsersURLs(userID string, shortUrls ...URL) error {
+	//TODO implement me
+	panic("implement me")
+}

@@ -4,89 +4,99 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgconn"
 	pgx "github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
+	"go-url-shortener/internal/app/storage/migrations"
 	"log"
+	"sync"
+	"time"
 )
+
+type delayedUserUrlsDeleter struct {
+	mu       sync.RWMutex
+	userChan map[int64]chan URL
+	done     chan struct{}
+}
+
+type PgxIface interface {
+	Begin(context.Context) (pgx.Tx, error)
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+	Ping(context.Context) error
+	//Prepare(context.Context, string, string) (*pgconn.StatementDescription, error)
+	//Close(context.Context) error
+	Close()
+}
 
 type PG struct {
 	Repository
-	db     *pgx.Conn
-	memMap *MemoryMap
+	db             PgxIface
+	delayedDeleter *delayedUserUrlsDeleter
 }
 
 var ErrNoRows = pgx.ErrNoRows
 
-func NewPG(dsn string) (*PG, error) {
+func newDeleteUserUrls() *delayedUserUrlsDeleter {
+	return &delayedUserUrlsDeleter{
+		userChan: make(map[int64]chan URL),
+	}
+}
 
-	conn, err := pgx.Connect(context.Background(), dsn)
+func NewPG(dsn string) (*PG, error) {
+	ctx := context.Background()
+	conf, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		//log.Fatal("Unable to connect to database: %v\n", err)
+		return nil, fmt.Errorf("unable to connect: parse dsn problem (dsn=%v): %w", dsn, err)
+	}
+
+	conf.MaxConns = 10
+	conn, err := pgxpool.ConnectConfig(ctx, conf)
+
+	if err != nil {
 		return nil, fmt.Errorf("unable to connect to database(dsn=%v): %w", dsn, err)
 	}
-	//defer conn.Close(context.Background())
 
 	repo := &PG{
-		db:     conn,
-		memMap: NewMemoryMap(),
+		db:             conn,
+		delayedDeleter: newDeleteUserUrls(),
 	}
-	err = repo.Migrate()
+	err = migrations.Migrate(ctx, conn)
 	if err != nil {
 		return nil, fmt.Errorf("cannot apply migrations: %w", err)
 	}
 	return repo, nil
 }
 
-func (d *PG) Migrate() error {
-	ctx := context.Background()
-
-	_, err := d.db.Exec(
-		ctx, `CREATE TABLE IF NOT EXISTS "revision" (version BIGSERIAL CONSTRAINT revision_version_pk PRIMARY KEY)`)
-	if err != nil {
-		return fmt.Errorf("cannot get or create table revision: %w", err)
-	}
-	var version int64
-	err = d.db.QueryRow(
-		ctx, "SELECT version FROM revision ORDER BY version DESC LIMIT 1").Scan(&version)
-
-	if err != nil &&
-		!(errors.Is(err, ErrNoRows)) {
-		return fmt.Errorf("cannot get version: %w", err)
-	}
-	if version < 1 {
-		return d.migration1()
-	}
-	return nil
-}
-
-func (d *PG) migration1() error {
-	_, err := d.db.Exec(
-		context.Background(),
-		`
-CREATE TABLE "user" (
-    id   bigserial CONSTRAINT user_id_pk PRIMARY KEY,
-    uuid UUID
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS user_uuid_uindex on "user"(uuid);
-
-CREATE TABLE url (
-    short   VARCHAR(255) CONSTRAINT url_short_pk PRIMARY KEY,
-    long    TEXT,
-    user_id BIGINT
-        CONSTRAINT url_user_id_fk
-            references "user"
-            ON UPDATE CASCADE ON DELETE SET NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS url_short_uindex ON url(short);
-
-INSERT INTO revision VALUES(1);  
-`)
-	return err
-}
-
 func (d *PG) Close() error {
-	return d.db.Close(context.Background())
+	d.delayedDeleter.Stop()
+	d.db.Close()
+	return nil
+	//return d.db.Close(context.Background())
+}
+
+func (d *delayedUserUrlsDeleter) Stop() {
+	d.done <- struct{}{}
+}
+
+func (d *PG) getOrCreateUser(userUUID string) (userPK int64, err error) {
+	err = d.db.QueryRow(context.Background(),
+		`SELECT id FROM "user" WHERE "uuid"=$1 LIMIT 1`, userUUID).
+		Scan(&userPK)
+	if errors.Is(err, ErrNoRows) {
+		err = d.db.QueryRow(context.Background(),
+			`INSERT INTO "user" (uuid) VALUES($1)
+			ON CONFLICT (uuid) DO NOTHING RETURNING id`, userUUID).
+			Scan(&userPK)
+		if err != nil {
+			return
+		}
+	}
+	log.Println("by userUUID:", userUUID, "got userPK:", userPK)
+	return
+
 }
 
 func (d *PG) SaveLongURL(long URL, userID string) (URL, error) {
@@ -102,7 +112,7 @@ func (d *PG) SaveLongURL(long URL, userID string) (URL, error) {
 	}
 
 	ct, err := d.db.Exec(context.Background(),
-		`INSERT INTO "url" ("short", "long", "user_id") VALUES($1, $2, $3) 
+		`INSERT INTO "url" ("short", "long", "user_id") VALUES($1, $2, $3)
 			ON CONFLICT ("short") DO NOTHING RETURNING "short"`, shortURL, long, userPK)
 
 	if err != nil {
@@ -121,16 +131,6 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("cannot get or create user: %w", err)
 	}
-
-	//insertUrlsStmt, err := d.db.Prepare(
-	//	ctx,
-	//	"insert_urls_stmt",
-	//	`INSERT INTO "url" ("short", "long", "user_id") VALUES($1, $2, $3)
-	//		ON CONFLICT ("short") DO NOTHING`)
-	//, shortURL, long, userPK
-	//if err != nil {
-	//	return nil, fmt.Errorf("cannot prepare insert: %w", err)
-	//}
 
 	result := make([]CorrelationShortPair, 0, len(longURLS))
 
@@ -151,55 +151,60 @@ func (d *PG) SaveLongBatchURL(longURLS []CorrelationLongPair, userID string) ([]
 		copyFromRows = append(copyFromRows, rowStruct{shortURL.S(), p.LongURL.S(), userPK})
 		result = append(result, CorrelationShortPair{p.CorrelationID, shortURL})
 	}
-	//FIXME: cannot insert rows: ERROR: duplicate key value violates unique constraint "url_short_pk" (SQLSTATE 23505)
-	_, err = d.db.CopyFrom(
+	tx, err := d.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cannot begin transaction: %w", err)
+	}
+	_, err = tx.Exec(ctx, `CREATE TEMP TABLE tmp_table ON COMMIT DROP AS SELECT * FROM "url" WITH NO DATA`)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create temp table: %w", err)
+	}
+	_, err = tx.CopyFrom(
 		ctx,
-		pgx.Identifier{"url"},
-		[]string{"short", "long", "user_id"},
+		pgx.Identifier{"tmp_table"},
+		[]string{"short", "long", "user_id", "is_deleted"},
 		pgx.CopyFromSlice(len(copyFromRows), func(i int) ([]interface{}, error) {
 			row := copyFromRows[i]
-			return []interface{}{row.Short, row.Long, row.UserPK}, nil
+			return []interface{}{row.Short, row.Long, row.UserPK, false}, nil
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cannot insert rows: %w", err)
+		return nil, fmt.Errorf("cannot insert rows to temp table: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `INSERT INTO "url" SELECT DISTINCT ON (short) * FROM tmp_table
+ON CONFLICT ("short")
+DO UPDATE SET long = EXCLUDED.long, is_deleted = false
+WHERE url.user_id = EXCLUDED.user_id and url.short = EXCLUDED.short`)
+	if err != nil {
+		return nil, fmt.Errorf("cannot insert rows from temp table: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return result, nil
 }
 
-func (d *PG) getOrCreateUser(userUUID string) (userPK int64, err error) {
-	err = d.db.QueryRow(context.Background(),
-		`SELECT id FROM "user" WHERE "uuid"=$1 LIMIT 1`, userUUID).
-		Scan(&userPK)
-	if errors.Is(err, ErrNoRows) {
-		err = d.db.QueryRow(context.Background(),
-			`INSERT INTO "user" (uuid) VALUES($1) 
-			ON CONFLICT (uuid) DO NOTHING RETURNING id`, userUUID).
-			Scan(&userPK)
-		if err != nil {
-			return
-		}
-	}
-
-	return
-
-}
-
 func (d *PG) GetLongURL(short URL) (URL, error) {
 	var long URL
+	var isDeleted bool
 	err := d.db.QueryRow(context.Background(),
-		`SELECT long FROM url WHERE short = $1 LIMIT 1`, short).
-		Scan(&long)
+		`SELECT long, is_deleted FROM url WHERE short = $1 LIMIT 1`, short).
+		Scan(&long, &isDeleted)
 	if errors.Is(err, ErrNoRows) {
 		return "", err
+	}
+	if isDeleted {
+		return "", ErrDeletedURL
 	}
 	return long, nil
 }
 
 func (d *PG) GetUsersURLs(userID string) []URLPair {
 	rows, err := d.db.Query(context.Background(),
-		`SELECT "long", "short" FROM "url" 
+		`SELECT "long", "short" FROM "url"
 		JOIN "user" ON "user".id = "url".user_id
 		WHERE "user".uuid = $1`, userID)
 
@@ -221,4 +226,88 @@ func (d *PG) GetUsersURLs(userID string) []URLPair {
 
 func (d *PG) Ping() bool {
 	return d.db.Ping(context.Background()) == nil
+}
+
+func (d *PG) DeleteUsersURLs(userUUID string, shortUrls ...URL) (err error) {
+	userPK, err := d.getOrCreateUser(userUUID)
+	if err != nil {
+		return fmt.Errorf("cannot get or create user: %w", err)
+	}
+	_, err = d.db.Exec(context.Background(),
+		`UPDATE "url" SET is_deleted = true WHERE short = any($1) and user_id = $2`, shortUrls, userPK)
+	//tag.RowsAffected()
+	return err
+}
+
+func (d *delayedUserUrlsDeleter) makeChan(db *PG, userPK int64, userUUID string) chan URL {
+	channel := make(chan URL)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.userChan[userPK] = channel
+
+	go func() {
+		urls := make([]URL, 0, 1000)
+		ticker := time.NewTicker(time.Second * 2)
+		for {
+			// собираем url из канала и либо, по таймауту либо, по достижении 1000 шт отправляем в базу
+			select {
+			case url := <-channel:
+				urls = append(urls, url)
+				if len(urls) >= 1000 {
+					err := db.DeleteUsersURLs(userUUID, urls...)
+					if err != nil {
+						log.Printf("error in delayed delete: %v", err)
+						continue
+					}
+					urls = urls[:0]
+				}
+			case <-ticker.C:
+				if len(urls) < 1 {
+					//TODO: можно удалять канал если он долго пустой
+					continue
+				}
+				err := db.DeleteUsersURLs(userUUID, urls...)
+				if err != nil {
+					log.Printf("error in delayed delete: %v", err)
+					continue
+				}
+				urls = urls[:0]
+
+			case <-d.done:
+				close(channel)
+				return
+			}
+
+		}
+	}()
+
+	return channel
+}
+
+func (d *delayedUserUrlsDeleter) PostUrlsForDelete(db *PG, userPK int64, userUUID string, shortUrls ...URL) {
+	//проверить есть ли канал для userId если нет - создать
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	channel, found := d.userChan[userPK]
+
+	if !found {
+		d.mu.RUnlock()
+		channel = d.makeChan(db, userPK, userUUID)
+		d.mu.RLock()
+	}
+	go func() {
+		for _, url := range shortUrls {
+			channel <- url
+		}
+	}()
+}
+
+func (d *PG) DelayedDeleteUsersURLs(userID string, shortUrls ...URL) (err error) {
+	userPK, err := d.getOrCreateUser(userID)
+	if err != nil {
+		return fmt.Errorf("cannot get or create user: %w", err)
+	}
+	d.delayedDeleter.PostUrlsForDelete(d, userPK, userID, shortUrls...)
+	return nil
 }

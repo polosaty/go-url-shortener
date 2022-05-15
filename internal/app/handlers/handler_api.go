@@ -33,6 +33,25 @@ func (h *MainHandler) GetUserUrlsJSON() http.HandlerFunc {
 	}
 }
 
+func (h *MainHandler) DeleteUserShortUrlsJSON() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session := GetSession(r)
+		var shortUrls []storage.URL
+		if err := json.NewDecoder(r.Body).Decode(&shortUrls); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		//if err := h.Repository.DeleteUsersURLs(session.UserID, shortUrls...); err != nil {
+		if err := h.Repository.DelayedDeleteUsersURLs(session.UserID, shortUrls...); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			log.Println("delete urls error", err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
 type PostLongJSONRequest struct {
 	URL storage.URL `json:"url"`
 }
